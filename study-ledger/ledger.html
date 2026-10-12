@@ -1,0 +1,813 @@
+<title>MAI Study Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column — week ledger first, then semester rhythm, course budgets, settings. */
+:root {
+  --bg: #F2F4F7;
+  --surface: #FFFFFF;
+  --surface-2: #E8ECF2;
+  --ink: #17202B;
+  --ink-2: #485466;
+  --muted: #727D8F;
+  --line: #D9DFE8;
+  --accent: #0E6B6B;
+  --accent-soft: #D5ECEA;
+  --today: #EEF7F6;
+  --good: #1D7A4B;
+  --good-soft: #DDF1E6;
+  --warn: #9A6200;
+  --warn-soft: #F8EBD0;
+  --bad: #B0352B;
+  --bad-soft: #F8DEDA;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F141B; --surface: #161D27; --surface-2: #1F2834; --ink: #E5EAF0; --ink-2: #AEB8C5;
+    --muted: #7E8999; --line: #2A3441; --accent: #4DB6AE; --accent-soft: #173B3B; --today: #142A2B;
+    --good: #52C48C; --good-soft: #15342A; --warn: #E1A93E; --warn-soft: #3A2E14; --bad: #F0776C; --bad-soft: #3D1E1C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F141B; --surface: #161D27; --surface-2: #1F2834; --ink: #E5EAF0; --ink-2: #AEB8C5;
+  --muted: #7E8999; --line: #2A3441; --accent: #4DB6AE; --accent-soft: #173B3B; --today: #142A2B;
+  --good: #52C48C; --good-soft: #15342A; --warn: #E1A93E; --warn-soft: #3A2E14; --bad: #F0776C; --bad-soft: #3D1E1C;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); font-weight: 700; line-height: 1.1; }
+h2 { font-size: 1.25rem; font-weight: 700; }
+p { margin: 0; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.sub { color: var(--ink-2); }
+.muted { color: var(--muted); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+header.top .meta { display: flex; flex-direction: column; gap: 6px; }
+.status-chip { display: inline-flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
+.status-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status-chip[data-s="ok"] .dot { background: var(--good); }
+.status-chip[data-s="busy"] .dot { background: var(--warn); }
+.status-chip[data-s="err"] .dot { background: var(--bad); }
+.notice { background: var(--warn-soft); color: var(--ink); border-radius: var(--r); padding: 10px 14px; font-size: 0.9rem; }
+
+.weekbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.weekbar .nav { display: flex; gap: 6px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; min-height: 36px; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { color: var(--bad); }
+.weekbar .title { display: flex; flex-direction: column; min-width: 0; }
+.weekbar .title strong { font-family: var(--f-display); font-size: 1.15rem; }
+.kind { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; border-radius: 999px; padding: 2px 10px; background: var(--surface-2); color: var(--ink-2); width: fit-content; }
+.kind[data-k="teaching"] { background: var(--accent-soft); color: var(--accent); }
+.kind[data-k="exam"] { background: var(--warn-soft); color: var(--warn); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tile .big { font-family: var(--f-display); font-size: 2rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.tile .big small { font-family: var(--f-body); font-size: 0.95rem; font-weight: 500; color: var(--muted); }
+.meter { height: 8px; background: var(--surface-2); border-radius: 4px; position: relative; overflow: hidden; }
+.meter > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 4px; }
+.meter > i { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+.agenda { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+.agenda li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; }
+.agenda li.past { color: var(--muted); }
+.agenda .t { font-family: var(--f-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.agenda .what { min-width: 0; }
+.agenda .what small { color: var(--muted); }
+
+.timer-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.timer-row select { flex: 1 1 160px; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 8px; min-height: 36px; }
+.clock { font-family: var(--f-mono); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+
+section.block { display: flex; flex-direction: column; gap: 12px; }
+.block-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
+.block-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+thead th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; white-space: nowrap; }
+tfoot td { font-weight: 600; border-bottom: none; }
+.r { text-align: right; }
+.course { min-width: 200px; }
+.course .nm { font-weight: 500; display: block; }
+.course .cd { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); }
+.term { font-family: var(--f-mono); font-size: 0.72rem; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
+td.day { padding: 4px; text-align: center; }
+td.day input { width: 56px; padding: 6px 4px; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+td.day input:focus { border-color: var(--accent); background: var(--surface); }
+td.day input:disabled { opacity: 0.6; }
+td.day .cls { display: block; font-size: 0.68rem; color: var(--accent); font-family: var(--f-mono); line-height: 1.2; margin-top: 2px; white-space: nowrap; }
+th.is-today, td.is-today { background: var(--today); }
+.tgt small { display: block; color: var(--muted); font-size: 0.72rem; white-space: nowrap; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.pill.good { color: var(--good); background: var(--good-soft); }
+.pill.warn { color: var(--warn); background: var(--warn-soft); }
+.pill.bad { color: var(--bad); background: var(--bad-soft); }
+.pill.idle { color: var(--ink-2); background: var(--surface-2); }
+
+.chart-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; position: relative; }
+.chart-box svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.82rem; color: var(--ink-2); padding: 4px 4px 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; background: var(--accent); display: inline-block; }
+.sw.t { height: 0; border-top: 2px dashed var(--ink-2); background: none; border-radius: 0; width: 16px; }
+.sw.b { background: var(--surface-2); }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 0.8rem; padding: 6px 9px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); }
+
+.bar-cell { min-width: 140px; }
+.budget-bar { height: 8px; background: var(--surface-2); border-radius: 4px; position: relative; }
+.budget-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 4px; max-width: 100%; }
+.budget-bar > i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+
+details.settings { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+details.settings > summary { cursor: pointer; padding: 14px 16px; font-family: var(--f-display); font-weight: 700; font-size: 1.1rem; }
+.set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; padding: 0 16px 16px; }
+.set-head { padding: 4px 16px 8px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field input[type="date"], .field select { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 8px; min-width: 0; }
+.field input[type="range"] { accent-color: var(--accent); width: 100%; }
+.hint { font-size: 0.8rem; color: var(--muted); }
+.set-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 16px; align-items: center; }
+.confirm { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.method { font-size: 0.88rem; color: var(--ink-2); max-width: 72ch; display: flex; flex-direction: column; gap: 6px; }
+.loading { color: var(--muted); padding: 24px; text-align: center; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="meta">
+      <span class="label">Master of Artificial Intelligence · ECS · 60 ECTS · 2026–2027</span>
+      <h1>MAI Study Ledger</h1>
+      <p class="sub">Weekly study hours per course, measured against each course's ECTS workload (25–30 h per credit) and your class timetable.</p>
+    </div>
+    <span class="status-chip" id="saveChip" data-s="busy"><span class="dot"></span><span id="saveText">Loading timetable…</span></span>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="weekbar">
+    <div class="nav">
+      <button class="btn" id="prevWeek" aria-label="Previous week">‹</button>
+      <button class="btn" id="nextWeek" aria-label="Next week">›</button>
+      <button class="btn" id="thisWeek">This week</button>
+    </div>
+    <div class="title"><strong id="weekTitle">Week of …</strong><span class="kind" id="weekKind" data-k="">…</span></div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile">
+      <span class="label">This week</span>
+      <div class="big" id="tWeek">0 <small>/ 0 h</small></div>
+      <div class="meter" id="mWeek"><span style="width:0"></span></div>
+      <span class="muted" id="tWeekNote"></span>
+    </div>
+    <div class="tile">
+      <span class="label" id="agendaLabel">Today's classes</span>
+      <ul class="agenda" id="agenda"><li class="loading">Loading timetable…</li></ul>
+    </div>
+    <div class="tile">
+      <span class="label">Year to date</span>
+      <div class="big" id="tYtd">0 <small>h logged</small></div>
+      <span id="tYtdPill"></span>
+      <span class="muted" id="tYtdNote"></span>
+    </div>
+    <div class="tile">
+      <span class="label">Study timer</span>
+      <div class="clock" id="clock">0:00:00</div>
+      <div class="timer-row">
+        <select id="timerCourse" aria-label="Course to time"></select>
+        <button class="btn primary" id="timerBtn">Start</button>
+      </div>
+      <span class="muted" id="timerNote">Stopping adds the time to today's cell.</span>
+    </div>
+  </div>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Hours this week</h2>
+      <div class="block-tools">
+        <span class="muted" id="fillMsg"></span>
+        <button class="btn" id="fillBtn">Log attended classes</button>
+      </div>
+    </div>
+    <p class="muted">Type hours per day (0.25 = 15 min); changes save automatically. Teal figures under a cell are your scheduled classes that day. Class time counts toward the course's hours.</p>
+    <div class="scroll"><table id="grid"><tbody><tr><td class="loading">Loading timetable…</td></tr></tbody></table></div>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2 id="chartTitle">Semester rhythm</h2>
+      <span class="muted">Total logged hours per week against the weekly plan. Click a week to open it.</span>
+    </div>
+    <div class="chart-box" id="chartBox">
+      <div class="legend"><span><i class="sw"></i>Logged hours</span><span><i class="sw t"></i>Planned hours</span><span><i class="sw b"></i>Break or exam weeks</span></div>
+      <svg id="chart" role="img" aria-label="Weekly logged hours versus plan"></svg>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Course budgets</h2>
+      <span class="muted">The black tick on each bar marks where you should be by today.</span>
+    </div>
+    <div class="scroll"><table id="budgets"></table></div>
+  </section>
+
+  <details class="settings" id="settingsBox">
+    <summary>Plan settings</summary>
+    <div class="set-grid">
+      <div class="field">
+        <label class="label" for="sH">Hours per ECTS credit</label>
+        <input type="range" id="sH" min="25" max="30" step="0.5">
+        <span class="num" id="sHVal"></span>
+        <span class="hint">KU Leuven counts 25–30 h of total work per credit. 27.5 is the midpoint.</span>
+      </div>
+      <div class="field">
+        <label class="label" for="sShare">Thesis work in semester 1</label>
+        <input type="range" id="sShare" min="0" max="100" step="5">
+        <span class="num" id="sShareVal"></span>
+        <span class="hint">The 15-ECTS thesis runs all year. The rest goes to semester 2.</span>
+      </div>
+      <div class="field">
+        <label class="label" for="s1Start">Semester 1 starts</label>
+        <input type="date" id="s1Start">
+        <label class="label" for="s1End">Semester 1 ends (after January exams)</label>
+        <input type="date" id="s1End">
+      </div>
+      <div class="field">
+        <label class="label" for="s2Start">Semester 2 starts</label>
+        <input type="date" id="s2Start">
+        <label class="label" for="s2End">Semester 2 ends (after June exams)</label>
+        <input type="date" id="s2End">
+      </div>
+    </div>
+    <div class="set-actions"><span class="hint">Lecture weeks come from the TimeEdit timetable: 21 Sep – 18 Dec 2026, and 8 Feb – 21 May 2027 with Easter break 29 Mar – 11 Apr. The exam period end dates are estimates; check them against the official KU Leuven calendar.</span></div>
+    <div class="set-head"><span class="label">Your exercise groups</span></div>
+    <div class="set-grid" id="groupGrid"></div>
+    <div class="set-actions">
+      <button class="btn" id="exportBtn" hidden>Export all hours (CSV)</button>
+      <button class="btn danger" id="clearWeekBtn">Clear this week</button>
+      <span class="confirm" id="clearConfirm" hidden>
+        <span>Erase every hour logged in this week?</span>
+        <button class="btn danger" id="clearYes">Erase</button>
+        <button class="btn" id="clearNo">Keep</button>
+      </span>
+      <span class="muted" id="exportMsg"></span>
+    </div>
+  </details>
+
+  <div class="method">
+    <span class="label">How targets are set</span>
+    <p>Each course gets a budget of ECTS × hours per credit. A semester course spreads that budget evenly over its semester, from the first lecture week to the end of its exam period, so lecture weeks, breaks and exam weeks all share the load. The thesis budget is split between the two semesters by the share you choose.</p>
+    <p>Scheduled lectures and exercise sessions for your groups come from the TimeEdit timetable. Class time is part of the budget, so the self-study figure is the weekly target minus that week's classes.</p>
+    <p>Status compares what you have logged with what the plan expects by today: on pace from 90%, slightly behind from 70%, behind below that.</p>
+  </div>
+</div>
+
+<script>
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const TERM_LABEL = { S1: "◖ Sem 1", S2: "◗ Sem 2", Y: "○ Full year" };
+const DAY = 864e5;
+const LS_KEY = "mai-ledger-v1", TIMER_KEY = "mai-ledger-timer";
+
+let SCHED = null;          // schedule.json
+let COURSES = [];
+let DEFAULTS = { hPerEcts: 27.5, thesisS1Share: 35, s1Start: "2026-09-21", s1End: "2027-01-31", s2Start: "2027-02-08", s2End: "2027-07-04", groups: {} };
+let settings = { ...DEFAULTS };
+let weeks = {};            // "YYYY-MM-DD" (Monday) -> { entries: { code: [7 numbers] } }
+let classIdx = {};         // code -> { "YYYY-MM-DD": hours }
+let backend = "pending";   // "db" | "local"
+let readOnly = false, ready = false;
+let db = null, downloads = null;
+let viewMon = mondayOf(new Date());
+
+/* ---------- dates ---------- */
+function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function parse(s) { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); }
+function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function mondayOf(d) { return addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -((d.getDay() + 6) % 7)); }
+function weekDiff(a, b) { return Math.round((b - a) / (7 * DAY)); }
+function todayIdx() { return (new Date().getDay() + 6) % 7; }
+function mins(t) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+const fmtDay = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+const fmtWd = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+
+/* ---------- calendar ---------- */
+function overlapsWeek(mon, s, e) { return parse(s) <= addDays(mon, 6) && parse(e) >= mon; }
+function breakOf(mon) { return (SCHED.calendar.breaks || []).find(b => overlapsWeek(mon, b.start, b.end)); }
+function teachingWeeks(key) {
+  const t = SCHED.calendar.teaching[key], out = [];
+  for (let m = mondayOf(parse(t.start)); m <= parse(t.end); m = addDays(m, 7)) if (!breakOf(m)) out.push(ymd(m));
+  return out;
+}
+let TEACH = { S1: [], S2: [] };
+function weekKind(mon) {
+  const id = ymd(mon), P = periods();
+  for (const key of ["S1", "S2"]) {
+    const i = TEACH[key].indexOf(id);
+    if (i >= 0) return { kind: "teaching", label: `Semester ${key === "S1" ? 1 : 2} · lecture week ${i + 1} of ${TEACH[key].length}` };
+  }
+  const b = breakOf(mon);
+  if (b) return { kind: "break", label: b.name };
+  for (const key of ["S1", "S2"]) if (inP(P[key], mon) && id > TEACH[key][TEACH[key].length - 1]) return { kind: "exam", label: `Semester ${key === "S1" ? 1 : 2} · study and exam period` };
+  return { kind: "off", label: "Outside both semesters" };
+}
+
+/* ---------- plan ---------- */
+function periods() {
+  const mk = (s, e) => { const a = mondayOf(parse(s)), b = mondayOf(parse(e)); return { start: a, end: b, n: Math.max(1, weekDiff(a, b) + 1) }; };
+  return { S1: mk(settings.s1Start, settings.s1End), S2: mk(settings.s2Start, settings.s2End) };
+}
+function inP(p, mon) { return mon >= p.start && mon <= p.end; }
+function budget(c, h = settings.hPerEcts) { return c.ects * h; }
+function weeklyTarget(c, mon, h = settings.hPerEcts) {
+  const P = periods(), B = budget(c, h);
+  if (c.term === "Y") {
+    const sh = settings.thesisS1Share / 100;
+    if (inP(P.S1, mon)) return B * sh / P.S1.n;
+    if (inP(P.S2, mon)) return B * (1 - sh) / P.S2.n;
+    return 0;
+  }
+  const p = P[c.term];
+  return inP(p, mon) ? B / p.n : 0;
+}
+/** Share of a week that has elapsed by today (today counts as a full day). */
+function elapsedFrac(mon) {
+  const now = mondayOf(new Date());
+  if (mon > now) return 0;
+  if (mon < now) return 1;
+  return (todayIdx() + 1) / 7;
+}
+function hrs(id, code) {
+  const a = weeks[id] && weeks[id].entries && weeks[id].entries[code];
+  return Array.isArray(a) ? a : [0, 0, 0, 0, 0, 0, 0];
+}
+function sum(a) { return a.reduce((s, v) => s + (Number(v) || 0), 0); }
+function loggedTotal(code) { let s = 0; for (const id in weeks) s += sum(hrs(id, code)); return s; }
+function expectedToDate(c) {
+  const P = periods(), now = mondayOf(new Date());
+  let s = 0;
+  for (let m = new Date(P.S1.start); m <= now && m <= P.S2.end; m = addDays(m, 7)) s += weeklyTarget(c, m) * elapsedFrac(m);
+  return s;
+}
+function rowsFor(mon) {
+  const id = ymd(mon);
+  return COURSES.filter(c => weeklyTarget(c, mon) > 0 || sum(hrs(id, c.code)) > 0 || c.term === "Y");
+}
+function status(logged, expected) {
+  if (expected < 0.5) return logged > 0 ? { cls: "good", icon: "▲", label: "Ahead" } : { cls: "idle", icon: "○", label: "Not started yet" };
+  const r = logged / expected;
+  if (r >= 1.1) return { cls: "good", icon: "▲", label: "Ahead" };
+  if (r >= 0.9) return { cls: "good", icon: "●", label: "On pace" };
+  if (r >= 0.7) return { cls: "warn", icon: "▼", label: "Slightly behind" };
+  return { cls: "bad", icon: "▼", label: "Behind" };
+}
+function pill(s, extra) { return `<span class="pill ${s.cls}"><span aria-hidden="true">${s.icon}</span>${s.label}${extra ? " · " + extra : ""}</span>`; }
+function h1(v) { return (Math.round(v * 10) / 10).toLocaleString("en-GB", { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+
+/* ---------- timetable ---------- */
+function groupOf(c) { return c.groups ? (c.groups.includes(settings.groups[c.code]) ? settings.groups[c.code] : c.groups[0]) : null; }
+function mySessions(c) { const g = groupOf(c); return (c.sessions || []).filter(s => !s.groups || s.groups.includes(g)); }
+function buildClassIdx() {
+  classIdx = {};
+  for (const c of COURSES) {
+    const m = classIdx[c.code] = {};
+    for (const s of mySessions(c)) m[s.date] = (m[s.date] || 0) + (mins(s.end) - mins(s.start)) / 60;
+  }
+}
+function classHrs(code, dateStr) { return (classIdx[code] && classIdx[code][dateStr]) || 0; }
+function weekClass(code, mon) { return DAYS.map((_, i) => classHrs(code, ymd(addDays(mon, i)))); }
+function yearClass(code) { return Object.values(classIdx[code] || {}).reduce((a, b) => a + b, 0); }
+
+/* ---------- save status ---------- */
+const chip = document.getElementById("saveChip"), chipText = document.getElementById("saveText");
+function setChip(s, text) { chip.dataset.s = s; chipText.textContent = text; }
+function showNotice(text) { const n = document.getElementById("notice"); n.textContent = text || ""; n.hidden = !text; }
+
+/* ---------- persistence ---------- */
+const saveTimers = {}, chains = {}, dirty = new Set();
+function sanitizeWeek(d) {
+  const out = { entries: {} };
+  const e = (d && d.entries) || {};
+  for (const k in e) if (Array.isArray(e[k])) out.entries[k] = DAYS.map((_, i) => Math.max(0, Math.min(24, Number(e[k][i]) || 0)));
+  return out;
+}
+function sanitizeSettings(d) {
+  const s = { ...DEFAULTS, ...(d || {}) };
+  s.hPerEcts = Math.min(30, Math.max(25, Number(s.hPerEcts) || DEFAULTS.hPerEcts));
+  s.thesisS1Share = Math.min(100, Math.max(0, Number(s.thesisS1Share)));
+  if (!Number.isFinite(s.thesisS1Share)) s.thesisS1Share = DEFAULTS.thesisS1Share;
+  for (const k of ["s1Start", "s1End", "s2Start", "s2End"]) if (!/^\d{4}-\d{2}-\d{2}$/.test(s[k])) s[k] = DEFAULTS[k];
+  const groups = {};
+  for (const c of COURSES) if (c.groups) { const g = s.groups && s.groups[c.code]; groups[c.code] = c.groups.includes(g) ? g : c.groups[0]; }
+  return { hPerEcts: s.hPerEcts, thesisS1Share: s.thesisS1Share, s1Start: s.s1Start, s1End: s.s1End, s2Start: s.s2Start, s2End: s.s2End, groups };
+}
+function loadLocal() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    weeks = {}; for (const id in (raw.weeks || {})) weeks[id] = sanitizeWeek(raw.weeks[id]);
+    settings = sanitizeSettings(raw.settings);
+  } catch (e) { /* storage blocked: start empty */ }
+}
+function saveLocal() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ weeks, settings })); return true; } catch (e) { return false; }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function writeDoc(path, body) {
+  try { await db.doc(path).set(body); }
+  catch (e) {
+    if (e && e.code === "unavailable") { await sleep(400 + Math.random() * 800); await db.doc(path).set(body); }
+    else throw e;
+  }
+}
+function schedule(key, fn) {
+  if (readOnly) return;
+  dirty.add(key);
+  setChip("busy", "Saving…");
+  clearTimeout(saveTimers[key]);
+  saveTimers[key] = setTimeout(() => {
+    delete saveTimers[key];
+    chains[key] = (chains[key] || Promise.resolve())
+      .then(fn)
+      .then(() => { if (!saveTimers[key]) dirty.delete(key); if (!Object.keys(saveTimers).length) setChip("ok", backend === "db" ? "Saved" : "Saved in this browser"); })
+      .catch(onSaveError);
+  }, 700);
+}
+function onSaveError(e) {
+  const code = e && e.code;
+  if (code === "invalid_argument") {
+    readOnly = true; setChip("err", "Read only");
+    showNotice("This copy of the ledger is read only for you. Open your own copy to log hours.");
+    renderGrid();
+  } else if (code === "quota_exceeded") {
+    setChip("err", "Storage full"); showNotice("The ledger's storage is full, so the last change was not saved.");
+  } else if (code === "revoked") {
+    setChip("err", "Access ended"); readOnly = true; renderGrid();
+  } else {
+    setChip("err", "Not saved"); showNotice("The last change could not be saved. Check your connection; the next edit will try again.");
+  }
+}
+function saveWeek(id) {
+  schedule("w:" + id, () => {
+    if (backend !== "db") { if (!saveLocal()) throw { code: "local" }; return; }
+    return writeDoc("weeks/" + id, { week: id, entries: JSON.parse(JSON.stringify(weeks[id].entries)), updatedAt: new Date().toISOString() });
+  });
+}
+function saveSettings() {
+  schedule("settings", () => {
+    if (backend !== "db") { if (!saveLocal()) throw { code: "local" }; return; }
+    return writeDoc("config/settings", JSON.parse(JSON.stringify(settings)));
+  });
+}
+function setHours(id, code, d, v) {
+  if (!weeks[id]) weeks[id] = { entries: {} };
+  const a = hrs(id, code).slice(); a[d] = Math.max(0, Math.min(24, Math.round(v * 100) / 100)); weeks[id].entries[code] = a;
+}
+
+/* ---------- week grid ---------- */
+const grid = document.getElementById("grid");
+function buildGrid(mon, rows) {
+  const isCur = ymd(mondayOf(new Date())) === ymd(mon), ti = todayIdx();
+  const dcls = i => (isCur && i === ti ? " is-today" : "");
+  let html = `<thead><tr><th>Course</th>${DAYS.map((d, i) => `<th class="r${dcls(i)}">${d} <span class="muted">${addDays(mon, i).getDate()}</span></th>`).join("")}<th class="r">Logged</th><th class="r">Classes</th><th class="r">Target</th><th>Status</th></tr></thead><tbody>`;
+  for (const c of rows) {
+    const g = groupOf(c);
+    html += `<tr data-code="${c.code}"><td class="course"><span class="nm">${esc(c.name)}</span><span class="cd">${c.code} · ${c.ects} ECTS${g ? " · group " + g : ""}</span><span class="term">${TERM_LABEL[c.term]}</span></td>`;
+    for (let i = 0; i < 7; i++) html += `<td class="day${dcls(i)}"><input id="in-${c.code}-${i}" data-code="${c.code}" data-d="${i}" type="number" inputmode="decimal" min="0" max="24" step="0.01" placeholder="·" aria-label="${esc(c.name)}, ${DAYS[i]}"><span class="cls" data-k="c${i}"></span></td>`;
+    html += `<td class="r num" data-k="tot"></td><td class="r num" data-k="cls"></td><td class="r num tgt" data-k="tgt"></td><td data-k="st"></td></tr>`;
+  }
+  html += `</tbody><tfoot><tr><td>Total</td>${DAYS.map((_, i) => `<td class="r num${dcls(i)}" data-k="d${i}"></td>`).join("")}<td class="r num" data-k="tot"></td><td class="r num" data-k="cls"></td><td class="r num" data-k="tgt"></td><td></td></tr></tfoot>`;
+  grid.innerHTML = html;
+}
+function renderGrid() {
+  const mon = viewMon, id = ymd(mon), rows = rowsFor(mon);
+  const key = id + "|" + rows.map(c => c.code + groupOf(c)).join(",") + "|" + ymd(new Date());
+  if (grid.dataset.key !== key) { buildGrid(mon, rows); grid.dataset.key = key; }
+  const frac = elapsedFrac(mon), active = document.activeElement;
+  const dayTot = [0, 0, 0, 0, 0, 0, 0];
+  let tot = 0, tgt = 0, clsTot = 0;
+  for (const c of rows) {
+    const tr = grid.querySelector(`tr[data-code="${c.code}"]`);
+    const a = hrs(id, c.code), wc = weekClass(c.code, mon);
+    a.forEach((v, i) => {
+      dayTot[i] += v;
+      const inp = tr.querySelector(`input[data-d="${i}"]`);
+      inp.disabled = readOnly;
+      if (inp !== active) { const s = v ? String(Math.round(v * 100) / 100) : ""; if (inp.value !== s) inp.value = s; }
+      tr.querySelector(`[data-k="c${i}"]`).textContent = wc[i] ? `${h1(wc[i])} class` : "";
+    });
+    const t = weeklyTarget(c, mon), s = sum(a), cl = sum(wc);
+    tot += s; tgt += t; clsTot += cl;
+    tr.querySelector('[data-k="tot"]').textContent = h1(s);
+    tr.querySelector('[data-k="cls"]').textContent = cl ? h1(cl) : "—";
+    tr.querySelector('[data-k="tgt"]').innerHTML = t > 0 ? `${h1(t)}<small>${cl ? "self-study " + h1(Math.max(0, t - cl)) : "all self-study"}</small>` : `<span class="muted">—</span>`;
+    tr.querySelector('[data-k="st"]').innerHTML = t <= 0 ? (s > 0 ? pill({ cls: "idle", icon: "○", label: "Off-plan" }) : "")
+      : frac === 0 ? pill({ cls: "idle", icon: "○", label: "Upcoming" }) : pill(status(s, t * frac));
+  }
+  const ft = grid.querySelector("tfoot");
+  dayTot.forEach((v, i) => ft.querySelector(`[data-k="d${i}"]`).textContent = h1(v));
+  ft.querySelector('[data-k="tot"]').textContent = h1(tot);
+  ft.querySelector('[data-k="cls"]').textContent = h1(clsTot);
+  ft.querySelector('[data-k="tgt"]').textContent = h1(tgt);
+  document.getElementById("fillBtn").disabled = readOnly || frac === 0 || clsTot === 0;
+  return { tot, tgt, frac, clsTot };
+}
+grid.addEventListener("input", e => {
+  const inp = e.target; if (!inp.matches("input[data-code]") || readOnly) return;
+  const id = ymd(viewMon);
+  let v = parseFloat(String(inp.value).replace(",", "."));
+  setHours(id, inp.dataset.code, +inp.dataset.d, Number.isFinite(v) ? v : 0);
+  saveWeek(id); renderAll();
+});
+grid.addEventListener("change", e => { if (e.target.matches("input[data-code]")) renderGrid(); });
+document.getElementById("fillBtn").addEventListener("click", () => {
+  if (readOnly) return;
+  const mon = viewMon, id = ymd(mon), today = ymd(new Date());
+  let n = 0;
+  for (const c of rowsFor(mon)) {
+    const a = hrs(id, c.code), wc = weekClass(c.code, mon);
+    wc.forEach((h, i) => { if (h > 0 && !a[i] && ymd(addDays(mon, i)) <= today) { setHours(id, c.code, i, h); n++; } });
+  }
+  document.getElementById("fillMsg").textContent = n ? `Added class time to ${n} empty ${n === 1 ? "cell" : "cells"}.` : "Every class so far this week already has hours.";
+  if (n) { saveWeek(id); renderAll(); }
+});
+
+/* ---------- header + tiles ---------- */
+function renderWeekbar(info) {
+  const id = ymd(viewMon), wk = weekKind(viewMon);
+  document.getElementById("weekTitle").textContent = `Week of ${fmtDay.format(viewMon)} – ${fmtDay.format(addDays(viewMon, 6))}`;
+  const kind = document.getElementById("weekKind"); kind.textContent = wk.label; kind.dataset.k = wk.kind;
+  const pct = info.tgt > 0 ? Math.min(100, info.tot / info.tgt * 100) : 0;
+  document.getElementById("tWeek").innerHTML = `${h1(info.tot)} <small>/ ${h1(info.tgt)} h planned</small>`;
+  document.getElementById("mWeek").innerHTML = `<span style="width:${pct}%"></span>` + (info.frac > 0 && info.frac < 1 ? `<i style="left:${info.frac * 100}%" title="Where you should be today"></i>` : "");
+  const left = Math.max(0, info.tgt - info.tot);
+  const isCur = id === ymd(mondayOf(new Date()));
+  document.getElementById("tWeekNote").textContent = info.tgt <= 0 ? "No planned study this week." :
+    left <= 0 ? "Weekly plan met." :
+    isCur ? `${h1(left)} h to go · about ${h1(left / Math.max(1, 7 - todayIdx()))} h per remaining day · ${h1(info.clsTot)} h of classes this week` : `${h1(left)} h short of the plan · ${h1(info.clsTot)} h of classes`;
+  document.getElementById("thisWeek").disabled = isCur;
+}
+function renderAgenda() {
+  const now = new Date(), today = ymd(now), nowM = now.getHours() * 60 + now.getMinutes();
+  const all = [];
+  for (const c of COURSES) for (const s of mySessions(c)) all.push({ ...s, c });
+  all.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const list = document.getElementById("agenda"), lab = document.getElementById("agendaLabel");
+  const todays = all.filter(s => s.date === today);
+  const row = (s, showDay) => `<li class="${s.date === today && mins(s.end) <= nowM ? "past" : ""}"><span class="t">${showDay ? fmtWd.format(parse(s.date)) + "<br>" : ""}${s.start}–${s.end}</span><span class="what">${esc(s.c.name)} <small>· ${s.type}${s.groups ? " " + groupOf(s.c) : ""}</small></span></li>`;
+  if (todays.length) { lab.textContent = "Today's classes"; list.innerHTML = todays.map(s => row(s, false)).join(""); return; }
+  const next = all.filter(s => s.date > today).slice(0, 1)[0];
+  lab.textContent = "Next class";
+  list.innerHTML = next ? `<li class="past"><span class="t">Today</span><span class="what">No classes scheduled.</span></li>` + all.filter(s => s.date === next.date).slice(0, 3).map(s => row(s, true)).join("")
+    : `<li><span class="t">—</span><span class="what">No more classes in the timetable.</span></li>`;
+}
+function renderYtd() {
+  let logged = 0, expected = 0;
+  for (const c of COURSES) { logged += loggedTotal(c.code); expected += expectedToDate(c); }
+  document.getElementById("tYtd").innerHTML = `${h1(logged)} <small>h logged</small>`;
+  const s = status(logged, expected), diff = logged - expected;
+  document.getElementById("tYtdPill").innerHTML = pill(s, expected >= 0.5 ? `${diff >= 0 ? "+" : "−"}${h1(Math.abs(diff))} h` : "");
+  const yearBudget = COURSES.reduce((a, c) => a + budget(c), 0);
+  document.getElementById("tYtdNote").textContent = `Plan expects ${h1(expected)} h by today, out of ${Math.round(yearBudget)} h for the year.`;
+}
+
+/* ---------- chart ---------- */
+const svg = document.getElementById("chart"), tip = document.getElementById("tip"), chartBox = document.getElementById("chartBox");
+function renderChart() {
+  const P = periods();
+  const key = inP(P.S1, viewMon) ? "S1" : inP(P.S2, viewMon) ? "S2" : (viewMon < P.S2.start ? "S1" : "S2");
+  const p = P[key];
+  document.getElementById("chartTitle").textContent = `Semester ${key === "S1" ? 1 : 2} rhythm`;
+  const data = [];
+  for (let i = 0; i < p.n; i++) {
+    const m = addDays(p.start, 7 * i), id = ymd(m);
+    let lg = 0, tg = 0, cl = 0;
+    for (const c of COURSES) { lg += sum(hrs(id, c.code)); tg += weeklyTarget(c, m); cl += sum(weekClass(c.code, m)); }
+    data.push({ m, id, lg, tg, cl, i, wk: weekKind(m) });
+  }
+  const W = Math.max(300, Math.round(svg.clientWidth || chartBox.clientWidth - 24)), H = 220;
+  const pad = { l: 36, r: 8, t: 10, b: 28 };
+  const maxV = Math.max(10, ...data.map(d => Math.max(d.lg, d.tg)));
+  const step = maxV > 60 ? 20 : 10, top = Math.ceil(maxV / step) * step;
+  const y = v => pad.t + (H - pad.t - pad.b) * (1 - v / top);
+  const bw = (W - pad.l - pad.r) / data.length, gap = Math.min(6, bw * 0.25);
+  const curId = ymd(mondayOf(new Date())), viewId = ymd(viewMon);
+  let g = "";
+  data.forEach(d => { if (d.wk.kind !== "teaching") g += `<rect x="${pad.l + d.i * bw}" y="${pad.t}" width="${bw}" height="${H - pad.t - pad.b}" fill="var(--surface-2)" opacity="0.7"/>`; });
+  for (let v = 0; v <= top; v += step) g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--f-mono)">${v}</text>`;
+  const labelEvery = bw < 22 ? Math.ceil(44 / bw) : 1;
+  data.forEach(d => {
+    const x = pad.l + d.i * bw + gap / 2, w = Math.max(2, bw - gap), base = y(0);
+    const hgt = Math.max(0, base - y(d.lg)), r = Math.min(4, w / 2, hgt);
+    if (d.lg > 0) g += `<path d="M${x},${base} V${base - hgt + r} Q${x},${base - hgt} ${x + r},${base - hgt} H${x + w - r} Q${x + w},${base - hgt} ${x + w},${base - hgt + r} V${base} Z" fill="var(--accent)" opacity="${d.id === viewId ? 1 : 0.78}"/>`;
+    if (d.tg > 0) g += `<line x1="${x}" x2="${x + w}" y1="${y(d.tg)}" y2="${y(d.tg)}" stroke="var(--ink-2)" stroke-width="2" stroke-dasharray="4 3"/>`;
+    if (d.i % labelEvery === 0 || d.id === curId) g += `<text x="${x + w / 2}" y="${H - pad.b + 16}" text-anchor="middle" font-size="11" fill="${d.id === curId ? "var(--ink)" : "var(--muted)"}" font-weight="${d.id === curId ? 600 : 400}" font-family="var(--f-mono)">${d.i + 1}</text>`;
+    g += `<rect class="hit" data-i="${d.i}" x="${pad.l + d.i * bw}" y="${pad.t}" width="${bw}" height="${H - pad.t - pad.b}" fill="transparent" style="cursor:pointer"/>`;
+  });
+  g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--ink-2)" stroke-width="1"/>`;
+  g += `<text x="${W - pad.r}" y="${H - 2}" text-anchor="end" font-size="10" fill="var(--muted)">semester week</text>`;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = g;
+  svg._data = data; svg._geom = { bw, pad, W };
+}
+svg.addEventListener("pointermove", e => {
+  const t = e.target.closest(".hit"); if (!t) { tip.hidden = true; return; }
+  const d = svg._data[+t.dataset.i], box = chartBox.getBoundingClientRect(), sb = svg.getBoundingClientRect();
+  const { bw, pad, W } = svg._geom, scale = sb.width / W;
+  tip.innerHTML = `Week ${d.i + 1} · ${fmtDay.format(d.m)} · ${esc(d.wk.kind === "teaching" ? "lectures" : d.wk.label.replace(/^Semester \d · /, ""))}<br><b>${h1(d.lg)} h</b> logged · ${h1(d.tg)} h planned · ${h1(d.cl)} h classes`;
+  tip.style.left = Math.min(box.width - 110, Math.max(110, sb.left - box.left + (pad.l + d.i * bw + bw / 2) * scale)) + "px";
+  tip.style.top = (sb.top - box.top + 40) + "px";
+  tip.hidden = false;
+});
+svg.addEventListener("pointerleave", () => tip.hidden = true);
+svg.addEventListener("click", e => { const t = e.target.closest(".hit"); if (t) { viewMon = svg._data[+t.dataset.i].m; renderAll(); } });
+
+/* ---------- budgets ---------- */
+function renderBudgets() {
+  let html = `<thead><tr><th>Course</th><th class="r">ECTS</th><th class="r">Budget</th><th class="r">Classes</th><th class="r">Logged</th><th>Progress</th><th class="r">Expected by today</th><th>Status</th></tr></thead><tbody>`;
+  const order = { S1: 0, Y: 1, S2: 2 };
+  for (const c of [...COURSES].sort((a, b) => order[a.term] - order[b.term])) {
+    const B = budget(c), lg = loggedTotal(c.code), ex = expectedToDate(c), diff = lg - ex, cl = yearClass(c.code);
+    const s = status(lg, ex);
+    html += `<tr><td class="course"><span class="nm">${esc(c.name)}</span><span class="cd">${c.code}</span><span class="term">${TERM_LABEL[c.term]}</span></td>
+      <td class="r num">${c.ects}</td>
+      <td class="r num">${Math.round(B)} h<small class="muted" style="display:block;font-size:.72rem">${c.ects * 25}–${c.ects * 30} h</small></td>
+      <td class="r num">${cl ? Math.round(cl) + " h" : "—"}<small class="muted" style="display:block;font-size:.72rem">${cl ? Math.round(Math.max(0, B - cl)) + " h self-study" : "all self-study"}</small></td>
+      <td class="r num">${h1(lg)} h</td>
+      <td class="bar-cell"><div class="budget-bar" title="${Math.round(lg / B * 100)}% of budget"><span style="width:${Math.min(100, lg / B * 100)}%"></span>${ex > 0 ? `<i style="left:${Math.min(100, ex / B * 100)}%"></i>` : ""}</div><span class="muted num" style="font-size:.75rem">${Math.round(lg / B * 100)}%</span></td>
+      <td class="r num">${h1(ex)} h</td>
+      <td>${pill(s, ex >= 0.5 ? `${diff >= 0 ? "+" : "−"}${h1(Math.abs(diff))} h` : "")}</td></tr>`;
+  }
+  document.getElementById("budgets").innerHTML = html + "</tbody>";
+}
+
+/* ---------- settings ---------- */
+const sIds = { sH: "hPerEcts", sShare: "thesisS1Share", s1Start: "s1Start", s1End: "s1End", s2Start: "s2Start", s2End: "s2End" };
+function buildGroupFields() {
+  document.getElementById("groupGrid").innerHTML = COURSES.filter(c => c.groups).map(c =>
+    `<div class="field"><label class="label" for="grp-${c.code}">${esc(c.name)}</label><select id="grp-${c.code}" data-code="${c.code}">${c.groups.map(g => `<option value="${g}">Group ${g}</option>`).join("")}</select>${c.groupNote ? `<span class="hint">${esc(c.groupNote)}</span>` : ""}</div>`).join("");
+}
+function renderSettings() {
+  for (const el in sIds) { const inp = document.getElementById(el); if (inp !== document.activeElement) inp.value = settings[sIds[el]]; inp.disabled = readOnly; }
+  document.querySelectorAll("#groupGrid select").forEach(s => { s.value = groupOf(COURSES.find(c => c.code === s.dataset.code)); s.disabled = readOnly; });
+  document.getElementById("sHVal").textContent = `${settings.hPerEcts} h per credit · ${Math.round(60 * settings.hPerEcts)} h for the year`;
+  const T = COURSES.find(c => c.term === "Y");
+  document.getElementById("sShareVal").textContent = `${settings.thesisS1Share}% · ${Math.round(budget(T) * settings.thesisS1Share / 100)} h in semester 1, ${Math.round(budget(T) * (100 - settings.thesisS1Share) / 100)} h in semester 2`;
+}
+for (const el in sIds) document.getElementById(el).addEventListener("input", e => {
+  const k = sIds[el], v = e.target.value;
+  if (k === "hPerEcts" || k === "thesisS1Share") settings[k] = Number(v);
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) settings[k] = v; else return;
+  settings = sanitizeSettings(settings);
+  saveSettings(); renderAll();
+});
+document.getElementById("groupGrid").addEventListener("change", e => {
+  if (!e.target.matches("select[data-code]")) return;
+  settings.groups = { ...settings.groups, [e.target.dataset.code]: e.target.value };
+  settings = sanitizeSettings(settings);
+  buildClassIdx(); saveSettings(); renderAll();
+});
+
+/* ---------- timer (per device) ---------- */
+const timerSel = document.getElementById("timerCourse"), timerBtn = document.getElementById("timerBtn"), clock = document.getElementById("clock");
+let timer = null;
+try { timer = JSON.parse(localStorage.getItem(TIMER_KEY) || "null"); } catch (e) { timer = null; }
+function renderTimerOptions() {
+  const active = rowsFor(mondayOf(new Date())), cur = timer ? timer.code : timerSel.value;
+  const list = active.length ? active : COURSES;
+  timerSel.innerHTML = list.map(c => `<option value="${c.code}">${esc(c.name)}</option>`).join("");
+  if (cur && list.some(c => c.code === cur)) timerSel.value = cur;
+  timerSel.disabled = !!timer;
+}
+function tick() {
+  const ms = timer ? Date.now() - timer.start : 0, s = Math.floor(ms / 1000);
+  clock.textContent = `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  timerBtn.textContent = timer ? "Stop and log" : "Start";
+}
+timerBtn.addEventListener("click", () => {
+  if (!ready) return;
+  if (!timer) {
+    timer = { code: timerSel.value, start: Date.now() };
+    try { localStorage.setItem(TIMER_KEY, JSON.stringify(timer)); } catch (e) {}
+    document.getElementById("timerNote").textContent = "Timing. You can close this page; the timer keeps running on this device.";
+  } else {
+    const started = new Date(timer.start), mon = mondayOf(started), id = ymd(mon), d = (started.getDay() + 6) % 7;
+    const add = Math.round((Date.now() - timer.start) / 36e5 * 20) / 20;  // nearest 3 minutes
+    const course = COURSES.find(c => c.code === timer.code);
+    if (add > 0 && !readOnly) {
+      setHours(id, timer.code, d, hrs(id, timer.code)[d] + add);
+      saveWeek(id);
+      document.getElementById("timerNote").textContent = `Logged ${h1(add)} h to ${course ? course.name : timer.code} on ${DAYS[d]}.`;
+    } else {
+      document.getElementById("timerNote").textContent = "Less than 3 minutes, so nothing was logged.";
+    }
+    timer = null;
+    try { localStorage.removeItem(TIMER_KEY); } catch (e) {}
+    viewMon = mon;
+    renderAll();
+  }
+  renderTimerOptions(); tick();
+});
+setInterval(tick, 1000);
+setInterval(() => { if (ready) renderAgenda(); }, 60000);
+
+/* ---------- week navigation & actions ---------- */
+document.getElementById("prevWeek").addEventListener("click", () => { viewMon = addDays(viewMon, -7); renderAll(); });
+document.getElementById("nextWeek").addEventListener("click", () => { viewMon = addDays(viewMon, 7); renderAll(); });
+document.getElementById("thisWeek").addEventListener("click", () => { viewMon = mondayOf(new Date()); renderAll(); });
+const clearConfirm = document.getElementById("clearConfirm");
+document.getElementById("clearWeekBtn").addEventListener("click", () => { clearConfirm.hidden = false; });
+document.getElementById("clearNo").addEventListener("click", () => { clearConfirm.hidden = true; });
+document.getElementById("clearYes").addEventListener("click", () => {
+  clearConfirm.hidden = true; if (readOnly) return;
+  const id = ymd(viewMon); weeks[id] = { entries: {} }; saveWeek(id); renderAll();
+});
+document.getElementById("exportBtn").addEventListener("click", async () => {
+  const msg = document.getElementById("exportMsg");
+  const lines = [["week_start", "course_code", "course", ...DAYS, "total"].join(",")];
+  for (const id of Object.keys(weeks).sort()) for (const c of COURSES) {
+    const a = hrs(id, c.code); if (sum(a) > 0) lines.push([id, c.code, `"${c.name.replace(/"/g, '""')}"`, ...a, Math.round(sum(a) * 100) / 100].join(","));
+  }
+  try { await downloads.save({ filename: "mai-study-hours.csv", data: lines.join("\n") }); msg.textContent = "Exported."; }
+  catch (e) { msg.textContent = e && e.code === "declined" ? "Export cancelled." : "Export isn't available here."; }
+});
+
+/* ---------- render ---------- */
+function renderAll() {
+  if (!ready) return;
+  const info = renderGrid();
+  renderWeekbar(info);
+  renderAgenda();
+  renderYtd();
+  renderChart();
+  renderBudgets();
+  renderSettings();
+  renderTimerOptions();
+  tick();
+}
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => ready && renderChart(), 120); });
+
+/* ---------- boot ---------- */
+(async () => {
+  try {
+    const r = await fetch("schedule.json");
+    if (!r.ok) throw new Error(r.status);
+    SCHED = await r.json();
+  } catch (e) {
+    setChip("err", "Timetable missing");
+    showNotice("The timetable file (schedule.json) could not be loaded, so the ledger can't start. Reload the page to try again.");
+    return;
+  }
+  COURSES = SCHED.courses;
+  const cal = SCHED.calendar;
+  DEFAULTS = { ...DEFAULTS, s1Start: cal.teaching.S1.start, s1End: cal.examsEstimated.S1.end, s2Start: cal.teaching.S2.start, s2End: cal.examsEstimated.S2.end };
+  TEACH = { S1: teachingWeeks("S1"), S2: teachingWeeks("S2") };
+  settings = sanitizeSettings(settings);
+  buildGroupFields(); buildClassIdx();
+  ready = true; renderAll();
+
+  let d = null;
+  try { d = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch (e) { d = null; }
+  if (!d) {
+    backend = "local"; loadLocal(); buildClassIdx(); renderAll();
+    setChip("ok", "Saved in this browser");
+    showNotice("Shared storage isn't available in this view, so hours are kept in this browser only.");
+  } else {
+    db = d; backend = "db"; setChip("ok", "Synced");
+    db.collection("weeks").onSnapshot(snap => {
+      const next = {};
+      for (const doc of snap.docs) if (doc.exists) next[doc.id] = sanitizeWeek(doc.data());
+      for (const id in weeks) if (dirty.has("w:" + id)) next[id] = weeks[id];
+      weeks = next; renderAll();
+    }, () => { setChip("err", "Offline"); showNotice("Lost the connection to your saved hours. Reload the page to reconnect."); });
+    db.doc("config/settings").onSnapshot(snap => {
+      if (dirty.has("settings")) return;
+      if (snap.exists) { settings = sanitizeSettings(snap.data()); buildClassIdx(); renderAll(); }
+    }, () => {});
+  }
+  try { downloads = window.claude && window.claude.use ? await window.claude.use("downloads") : null; } catch (e) { downloads = null; }
+  document.getElementById("exportBtn").hidden = !downloads;
+})();
+</script>
