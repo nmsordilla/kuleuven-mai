@@ -210,7 +210,7 @@ details.settings > summary { cursor: pointer; padding: 14px 16px; font-family: v
         <button class="btn" id="fillBtn">Log attended classes</button>
       </div>
     </div>
-    <p class="muted">Type hours per day (0.25 = 15 min); changes save automatically. Teal figures under a cell are your scheduled classes that day. Class time counts toward the course's hours.</p>
+    <p class="muted">Type time per day as h:mm, for example 1:55; changes save automatically. Teal figures under a cell are your scheduled lectures and exercise sessions that day. Class time counts toward the course's hours.</p>
     <div class="scroll"><table id="grid"><tbody><tr><td class="loading">Loading timetable…</td></tr></tbody></table></div>
   </section>
 
@@ -297,6 +297,7 @@ let DEFAULTS = { hPerEcts: 27.5, thesisS1Share: 35, s1Start: "2026-09-21", s1End
 let settings = { ...DEFAULTS };
 let weeks = {};            // "YYYY-MM-DD" (Monday) -> { entries: { code: [7 numbers] } }
 let classIdx = {};         // code -> { "YYYY-MM-DD": hours }
+let classTypeIdx = {};     // code -> { "YYYY-MM-DD": { lecture: hours, exercises: hours } }
 let backend = "pending";   // "db" | "local"
 let readOnly = false, ready = false;
 let db = null, downloads = null;
@@ -384,21 +385,44 @@ function status(logged, expected) {
   return { cls: "bad", icon: "▼", label: "Behind" };
 }
 function pill(s, extra) { return `<span class="pill ${s.cls}"><span aria-hidden="true">${s.icon}</span>${s.label}${extra ? " · " + extra : ""}</span>`; }
-function h1(v) { return (Math.round(v * 10) / 10).toLocaleString("en-GB", { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+/** Hours as h:mm, the way the timetable reads: 1.9166 -> "1:55". */
+function hm(v) { const t = Math.max(0, Math.round(v * 60)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }
+/** Accepts "1:55", "1h55", "1h", "90m" and plain "1.5"; anything else is 0. */
+function parseHM(str) {
+  const t = String(str).trim().replace(",", "."); if (!t) return 0;
+  let m;
+  if ((m = t.match(/^(\d+)\s*:\s*(\d{1,2})$/))) return +m[1] + +m[2] / 60;
+  if ((m = t.match(/^(\d+)\s*h\s*(\d{1,2})?$/i))) return +m[1] + (+m[2] || 0) / 60;
+  if ((m = t.match(/^(\d+)\s*m(in)?$/i))) return +m[1] / 60;
+  const v = parseFloat(t); return Number.isFinite(v) ? v : 0;
+}
 function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
 
 /* ---------- timetable ---------- */
 function groupOf(c) { return c.groups ? (c.groups.includes(settings.groups[c.code]) ? settings.groups[c.code] : c.groups[0]) : null; }
 function mySessions(c) { const g = groupOf(c); return (c.sessions || []).filter(s => !s.groups || s.groups.includes(g)); }
 function buildClassIdx() {
-  classIdx = {};
+  classIdx = {}; classTypeIdx = {};
   for (const c of COURSES) {
-    const m = classIdx[c.code] = {};
-    for (const s of mySessions(c)) m[s.date] = (m[s.date] || 0) + (mins(s.end) - mins(s.start)) / 60;
+    const m = classIdx[c.code] = {}, k = classTypeIdx[c.code] = {};
+    for (const s of mySessions(c)) {
+      const h = (mins(s.end) - mins(s.start)) / 60;
+      m[s.date] = (m[s.date] || 0) + h;
+      const t = k[s.date] = k[s.date] || {};
+      t[s.type] = (t[s.type] || 0) + h;
+    }
   }
 }
 function classHrs(code, dateStr) { return (classIdx[code] && classIdx[code][dateStr]) || 0; }
 function weekClass(code, mon) { return DAYS.map((_, i) => classHrs(code, ymd(addDays(mon, i)))); }
+function weekClassTypes(code, mon) { return DAYS.map((_, i) => (classTypeIdx[code] || {})[ymd(addDays(mon, i))] || null); }
+const TYPE_LABEL = { lecture: "lecture", exercises: "exercise" }, TYPE_ORDER = ["lecture", "exercises"];
+/** "1.9 lecture", or both lines when a day has a lecture and an exercise session. */
+function classLabel(byType) {
+  if (!byType) return "";
+  const keys = TYPE_ORDER.filter(t => byType[t]).concat(Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)));
+  return keys.map(t => `${hm(byType[t])} ${esc(TYPE_LABEL[t] || t)}`).join("<br>");
+}
 function yearClass(code) { return Object.values(classIdx[code] || {}).reduce((a, b) => a + b, 0); }
 
 /* ---------- save status ---------- */
@@ -483,7 +507,7 @@ function saveSettings() {
 }
 function setHours(id, code, d, v) {
   if (!weeks[id]) weeks[id] = { entries: {} };
-  const a = hrs(id, code).slice(); a[d] = Math.max(0, Math.min(24, Math.round(v * 100) / 100)); weeks[id].entries[code] = a;
+  const a = hrs(id, code).slice(); a[d] = Math.max(0, Math.min(24, Math.round(v * 60) / 60)); weeks[id].entries[code] = a;
 }
 
 /* ---------- week grid ---------- */
@@ -495,7 +519,7 @@ function buildGrid(mon, rows) {
   for (const c of rows) {
     const g = groupOf(c);
     html += `<tr data-code="${c.code}"><td class="course"><span class="nm">${esc(c.name)}</span><span class="cd">${c.code} · ${c.ects} ECTS${g ? " · group " + g : ""}</span><span class="term">${TERM_LABEL[c.term]}</span></td>`;
-    for (let i = 0; i < 7; i++) html += `<td class="day${dcls(i)}"><input id="in-${c.code}-${i}" data-code="${c.code}" data-d="${i}" type="number" inputmode="decimal" min="0" max="24" step="0.01" placeholder="·" aria-label="${esc(c.name)}, ${DAYS[i]}"><span class="cls" data-k="c${i}"></span></td>`;
+    for (let i = 0; i < 7; i++) html += `<td class="day${dcls(i)}"><input id="in-${c.code}-${i}" data-code="${c.code}" data-d="${i}" type="text" inputmode="text" autocomplete="off" placeholder="·" aria-label="${esc(c.name)}, ${DAYS[i]}" title="Hours and minutes, e.g. 1:55"><span class="cls" data-k="c${i}"></span></td>`;
     html += `<td class="r num" data-k="tot"></td><td class="r num" data-k="cls"></td><td class="r num tgt" data-k="tgt"></td><td data-k="st"></td></tr>`;
   }
   html += `</tbody><tfoot><tr><td>Total</td>${DAYS.map((_, i) => `<td class="r num${dcls(i)}" data-k="d${i}"></td>`).join("")}<td class="r num" data-k="tot"></td><td class="r num" data-k="cls"></td><td class="r num" data-k="tgt"></td><td></td></tr></tfoot>`;
@@ -510,38 +534,38 @@ function renderGrid() {
   let tot = 0, tgt = 0, clsTot = 0;
   for (const c of rows) {
     const tr = grid.querySelector(`tr[data-code="${c.code}"]`);
-    const a = hrs(id, c.code), wc = weekClass(c.code, mon);
+    const a = hrs(id, c.code), wc = weekClass(c.code, mon), wct = weekClassTypes(c.code, mon);
     a.forEach((v, i) => {
       dayTot[i] += v;
       const inp = tr.querySelector(`input[data-d="${i}"]`);
       inp.disabled = readOnly;
-      if (inp !== active) { const s = v ? String(Math.round(v * 100) / 100) : ""; if (inp.value !== s) inp.value = s; }
-      tr.querySelector(`[data-k="c${i}"]`).textContent = wc[i] ? `${h1(wc[i])} class` : "";
+      if (inp !== active) { const s = v ? hm(v) : ""; if (inp.value !== s) inp.value = s; }
+      tr.querySelector(`[data-k="c${i}"]`).innerHTML = classLabel(wct[i]);
     });
     const t = weeklyTarget(c, mon), s = sum(a), cl = sum(wc);
     tot += s; tgt += t; clsTot += cl;
-    tr.querySelector('[data-k="tot"]').textContent = h1(s);
-    tr.querySelector('[data-k="cls"]').textContent = cl ? h1(cl) : "—";
-    tr.querySelector('[data-k="tgt"]').innerHTML = t > 0 ? `${h1(t)}<small>${cl ? "self-study " + h1(Math.max(0, t - cl)) : "all self-study"}</small>` : `<span class="muted">—</span>`;
+    tr.querySelector('[data-k="tot"]').textContent = hm(s);
+    tr.querySelector('[data-k="cls"]').textContent = cl ? hm(cl) : "—";
+    tr.querySelector('[data-k="tgt"]').innerHTML = t > 0 ? `${hm(t)}<small>${cl ? "self-study " + hm(Math.max(0, t - cl)) : "all self-study"}</small>` : `<span class="muted">—</span>`;
     tr.querySelector('[data-k="st"]').innerHTML = t <= 0 ? (s > 0 ? pill({ cls: "idle", icon: "○", label: "Off-plan" }) : "")
       : frac === 0 ? pill({ cls: "idle", icon: "○", label: "Upcoming" }) : pill(status(s, t * frac));
   }
   const ft = grid.querySelector("tfoot");
-  dayTot.forEach((v, i) => ft.querySelector(`[data-k="d${i}"]`).textContent = h1(v));
-  ft.querySelector('[data-k="tot"]').textContent = h1(tot);
-  ft.querySelector('[data-k="cls"]').textContent = h1(clsTot);
-  ft.querySelector('[data-k="tgt"]').textContent = h1(tgt);
+  dayTot.forEach((v, i) => ft.querySelector(`[data-k="d${i}"]`).textContent = hm(v));
+  ft.querySelector('[data-k="tot"]').textContent = hm(tot);
+  ft.querySelector('[data-k="cls"]').textContent = hm(clsTot);
+  ft.querySelector('[data-k="tgt"]').textContent = hm(tgt);
   document.getElementById("fillBtn").disabled = readOnly || frac === 0 || clsTot === 0;
   return { tot, tgt, frac, clsTot };
 }
 grid.addEventListener("input", e => {
   const inp = e.target; if (!inp.matches("input[data-code]") || readOnly) return;
   const id = ymd(viewMon);
-  let v = parseFloat(String(inp.value).replace(",", "."));
-  setHours(id, inp.dataset.code, +inp.dataset.d, Number.isFinite(v) ? v : 0);
+  setHours(id, inp.dataset.code, +inp.dataset.d, parseHM(inp.value));
   saveWeek(id); renderAll();
 });
 grid.addEventListener("change", e => { if (e.target.matches("input[data-code]")) renderGrid(); });
+grid.addEventListener("focusout", e => { if (e.target.matches("input[data-code]")) setTimeout(renderGrid, 0); });
 document.getElementById("fillBtn").addEventListener("click", () => {
   if (readOnly) return;
   const mon = viewMon, id = ymd(mon), today = ymd(new Date());
@@ -560,13 +584,13 @@ function renderWeekbar(info) {
   document.getElementById("weekTitle").textContent = `Week of ${fmtDay.format(viewMon)} – ${fmtDay.format(addDays(viewMon, 6))}`;
   const kind = document.getElementById("weekKind"); kind.textContent = wk.label; kind.dataset.k = wk.kind;
   const pct = info.tgt > 0 ? Math.min(100, info.tot / info.tgt * 100) : 0;
-  document.getElementById("tWeek").innerHTML = `${h1(info.tot)} <small>/ ${h1(info.tgt)} h planned</small>`;
+  document.getElementById("tWeek").innerHTML = `${hm(info.tot)} <small>/ ${hm(info.tgt)} planned</small>`;
   document.getElementById("mWeek").innerHTML = `<span style="width:${pct}%"></span>` + (info.frac > 0 && info.frac < 1 ? `<i style="left:${info.frac * 100}%" title="Where you should be today"></i>` : "");
   const left = Math.max(0, info.tgt - info.tot);
   const isCur = id === ymd(mondayOf(new Date()));
   document.getElementById("tWeekNote").textContent = info.tgt <= 0 ? "No planned study this week." :
     left <= 0 ? "Weekly plan met." :
-    isCur ? `${h1(left)} h to go · about ${h1(left / Math.max(1, 7 - todayIdx()))} h per remaining day · ${h1(info.clsTot)} h of classes this week` : `${h1(left)} h short of the plan · ${h1(info.clsTot)} h of classes`;
+    isCur ? `${hm(left)} to go · about ${hm(left / Math.max(1, 7 - todayIdx()))} per remaining day · ${hm(info.clsTot)} of classes this week` : `${hm(left)} short of the plan · ${hm(info.clsTot)} of classes`;
   document.getElementById("thisWeek").disabled = isCur;
 }
 function renderAgenda() {
@@ -586,11 +610,11 @@ function renderAgenda() {
 function renderYtd() {
   let logged = 0, expected = 0;
   for (const c of COURSES) { logged += loggedTotal(c.code); expected += expectedToDate(c); }
-  document.getElementById("tYtd").innerHTML = `${h1(logged)} <small>h logged</small>`;
+  document.getElementById("tYtd").innerHTML = `${hm(logged)} <small>logged</small>`;
   const s = status(logged, expected), diff = logged - expected;
-  document.getElementById("tYtdPill").innerHTML = pill(s, expected >= 0.5 ? `${diff >= 0 ? "+" : "−"}${h1(Math.abs(diff))} h` : "");
+  document.getElementById("tYtdPill").innerHTML = pill(s, expected >= 0.5 ? `${diff >= 0 ? "+" : "−"}${hm(Math.abs(diff))}` : "");
   const yearBudget = COURSES.reduce((a, c) => a + budget(c), 0);
-  document.getElementById("tYtdNote").textContent = `Plan expects ${h1(expected)} h by today, out of ${Math.round(yearBudget)} h for the year.`;
+  document.getElementById("tYtdNote").textContent = `Plan expects ${hm(expected)} by today, out of ${Math.round(yearBudget)} h for the year.`;
 }
 
 /* ---------- chart ---------- */
@@ -636,7 +660,7 @@ svg.addEventListener("pointermove", e => {
   const t = e.target.closest(".hit"); if (!t) { tip.hidden = true; return; }
   const d = svg._data[+t.dataset.i], box = chartBox.getBoundingClientRect(), sb = svg.getBoundingClientRect();
   const { bw, pad, W } = svg._geom, scale = sb.width / W;
-  tip.innerHTML = `Week ${d.i + 1} · ${fmtDay.format(d.m)} · ${esc(d.wk.kind === "teaching" ? "lectures" : d.wk.label.replace(/^Semester \d · /, ""))}<br><b>${h1(d.lg)} h</b> logged · ${h1(d.tg)} h planned · ${h1(d.cl)} h classes`;
+  tip.innerHTML = `Week ${d.i + 1} · ${fmtDay.format(d.m)} · ${esc(d.wk.kind === "teaching" ? "lectures" : d.wk.label.replace(/^Semester \d · /, ""))}<br><b>${hm(d.lg)}</b> logged · ${hm(d.tg)} planned · ${hm(d.cl)} classes`;
   tip.style.left = Math.min(box.width - 110, Math.max(110, sb.left - box.left + (pad.l + d.i * bw + bw / 2) * scale)) + "px";
   tip.style.top = (sb.top - box.top + 40) + "px";
   tip.hidden = false;
@@ -655,10 +679,10 @@ function renderBudgets() {
       <td class="r num">${c.ects}</td>
       <td class="r num">${Math.round(B)} h<small class="muted" style="display:block;font-size:.72rem">${c.ects * 25}–${c.ects * 30} h</small></td>
       <td class="r num">${cl ? Math.round(cl) + " h" : "—"}<small class="muted" style="display:block;font-size:.72rem">${cl ? Math.round(Math.max(0, B - cl)) + " h self-study" : "all self-study"}</small></td>
-      <td class="r num">${h1(lg)} h</td>
+      <td class="r num">${hm(lg)}</td>
       <td class="bar-cell"><div class="budget-bar" title="${Math.round(lg / B * 100)}% of budget"><span style="width:${Math.min(100, lg / B * 100)}%"></span>${ex > 0 ? `<i style="left:${Math.min(100, ex / B * 100)}%"></i>` : ""}</div><span class="muted num" style="font-size:.75rem">${Math.round(lg / B * 100)}%</span></td>
-      <td class="r num">${h1(ex)} h</td>
-      <td>${pill(s, ex >= 0.5 ? `${diff >= 0 ? "+" : "−"}${h1(Math.abs(diff))} h` : "")}</td></tr>`;
+      <td class="r num">${hm(ex)}</td>
+      <td>${pill(s, ex >= 0.5 ? `${diff >= 0 ? "+" : "−"}${hm(Math.abs(diff))}` : "")}</td></tr>`;
   }
   document.getElementById("budgets").innerHTML = html + "</tbody>";
 }
@@ -719,7 +743,7 @@ timerBtn.addEventListener("click", () => {
     if (add > 0 && !readOnly) {
       setHours(id, timer.code, d, hrs(id, timer.code)[d] + add);
       saveWeek(id);
-      document.getElementById("timerNote").textContent = `Logged ${h1(add)} h to ${course ? course.name : timer.code} on ${DAYS[d]}.`;
+      document.getElementById("timerNote").textContent = `Logged ${hm(add)} to ${course ? course.name : timer.code} on ${DAYS[d]}.`;
     } else {
       document.getElementById("timerNote").textContent = "Less than 3 minutes, so nothing was logged.";
     }
