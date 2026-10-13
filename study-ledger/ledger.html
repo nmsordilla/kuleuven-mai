@@ -113,7 +113,11 @@ td.day { padding: 4px; text-align: center; }
 td.day input { width: 56px; padding: 6px 4px; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 td.day input:focus { border-color: var(--accent); background: var(--surface); }
 td.day input:disabled { opacity: 0.6; }
-td.day .cls { display: block; font-size: 0.68rem; color: var(--accent); font-family: var(--f-mono); line-height: 1.2; margin-top: 2px; white-space: nowrap; }
+td.day .cls { display: block; font-size: 0.68rem; color: var(--accent); font-family: var(--f-mono); line-height: 1.2; margin-top: 2px; white-space: nowrap; opacity: 0.55; }
+td.day .cls[data-d] { cursor: pointer; }
+td.day .cls[data-d]:hover { text-decoration: underline; }
+td.day .cls.on { opacity: 1; font-weight: 600; }
+.tgt small, [data-k="cls"] small { display: block; color: var(--muted); font-size: 0.72rem; white-space: nowrap; font-weight: 400; }
 th.is-today, td.is-today { background: var(--today); }
 .tgt small { display: block; color: var(--muted); font-size: 0.72rem; white-space: nowrap; }
 
@@ -210,7 +214,7 @@ details.settings > summary { cursor: pointer; padding: 14px 16px; font-family: v
         <button class="btn" id="fillBtn">Log attended classes</button>
       </div>
     </div>
-    <p class="muted">Type time per day as h:mm, for example 1:55; changes save automatically. Teal figures under a cell are your scheduled lectures and exercise sessions that day. Class time counts toward the course's hours.</p>
+    <p class="muted">Type your self-study time per day as h:mm, for example 1:55; changes save automatically. Teal figures under a cell are that day's scheduled lectures and exercise sessions — click one to mark it attended (✓). Both count toward the course.</p>
     <div class="scroll"><table id="grid"><tbody><tr><td class="loading">Loading timetable…</td></tr></tbody></table></div>
   </section>
 
@@ -360,10 +364,13 @@ function elapsedFrac(mon) {
   if (mon < now) return 1;
   return (todayIdx() + 1) / 7;
 }
-function hrs(id, code) {
-  const a = weeks[id] && weeks[id].entries && weeks[id].entries[code];
-  return Array.isArray(a) ? a : [0, 0, 0, 0, 0, 0, 0];
-}
+const NO_DAYS = [0, 0, 0, 0, 0, 0, 0];
+/** Self-study you typed. */
+function selfHrs(id, code) { const w = weeks[id], a = w && w.self && w.self[code]; return Array.isArray(a) ? a : NO_DAYS; }
+/** Class time you marked attended. */
+function attHrs(id, code) { const w = weeks[id], a = w && w.att && w.att[code]; return Array.isArray(a) ? a : NO_DAYS; }
+/** Everything that counts toward the course that day. */
+function hrs(id, code) { const a = selfHrs(id, code), b = attHrs(id, code); return a.map((v, i) => v + b[i]); }
 function sum(a) { return a.reduce((s, v) => s + (Number(v) || 0), 0); }
 function loggedTotal(code) { let s = 0; for (const id in weeks) s += sum(hrs(id, code)); return s; }
 function expectedToDate(c) {
@@ -417,11 +424,11 @@ function classHrs(code, dateStr) { return (classIdx[code] && classIdx[code][date
 function weekClass(code, mon) { return DAYS.map((_, i) => classHrs(code, ymd(addDays(mon, i)))); }
 function weekClassTypes(code, mon) { return DAYS.map((_, i) => (classTypeIdx[code] || {})[ymd(addDays(mon, i))] || null); }
 const TYPE_LABEL = { lecture: "lecture", exercises: "exercise" }, TYPE_ORDER = ["lecture", "exercises"];
-/** "1.9 lecture", or both lines when a day has a lecture and an exercise session. */
-function classLabel(byType) {
+/** "1:55 lecture", both lines when a day has a lecture and an exercise session; ticked once attended. */
+function classLabel(byType, attended) {
   if (!byType) return "";
   const keys = TYPE_ORDER.filter(t => byType[t]).concat(Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)));
-  return keys.map(t => `${hm(byType[t])} ${esc(TYPE_LABEL[t] || t)}`).join("<br>");
+  return keys.map(t => `${attended ? "\u2713 " : ""}${hm(byType[t])} ${esc(TYPE_LABEL[t] || t)}`).join("<br>");
 }
 function yearClass(code) { return Object.values(classIdx[code] || {}).reduce((a, b) => a + b, 0); }
 
@@ -432,10 +439,23 @@ function showNotice(text) { const n = document.getElementById("notice"); n.textC
 
 /* ---------- persistence ---------- */
 const saveTimers = {}, chains = {}, dirty = new Set();
-function sanitizeWeek(d) {
-  const out = { entries: {} };
-  const e = (d && d.entries) || {};
-  for (const k in e) if (Array.isArray(e[k])) out.entries[k] = DAYS.map((_, i) => Math.max(0, Math.min(24, Number(e[k][i]) || 0)));
+function sanitizeWeek(d, id) {
+  const out = { self: {}, att: {} };
+  const clamp = a => DAYS.map((_, i) => Math.max(0, Math.min(24, Number(a[i]) || 0)));
+  if (d && (d.self || d.att)) {
+    for (const k in (d.self || {})) if (Array.isArray(d.self[k])) out.self[k] = clamp(d.self[k]);
+    for (const k in (d.att || {})) if (Array.isArray(d.att[k])) out.att[k] = clamp(d.att[k]);
+    return out;
+  }
+  // Older weeks held one total per day. Split it against that week's timetable:
+  // whatever matches a scheduled class counts as attended, the rest is self-study.
+  const e = (d && d.entries) || {}, mon = parse(id || (d && d.week) || "1970-01-01");
+  for (const k in e) {
+    if (!Array.isArray(e[k])) continue;
+    const tot = clamp(e[k]), wc = weekClass(k, mon);
+    out.att[k] = tot.map((v, i) => Math.min(v, wc[i] || 0));
+    out.self[k] = tot.map((v, i) => Math.max(0, v - Math.min(v, wc[i] || 0)));
+  }
   return out;
 }
 function sanitizeSettings(d) {
@@ -451,7 +471,7 @@ function sanitizeSettings(d) {
 function loadLocal() {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
-    weeks = {}; for (const id in (raw.weeks || {})) weeks[id] = sanitizeWeek(raw.weeks[id]);
+    weeks = {}; for (const id in (raw.weeks || {})) weeks[id] = sanitizeWeek(raw.weeks[id], id);
     settings = sanitizeSettings(raw.settings);
   } catch (e) { /* storage blocked: start empty */ }
 }
@@ -496,7 +516,7 @@ function onSaveError(e) {
 function saveWeek(id) {
   schedule("w:" + id, () => {
     if (backend !== "db") { if (!saveLocal()) throw { code: "local" }; return; }
-    return writeDoc("weeks/" + id, { week: id, entries: JSON.parse(JSON.stringify(weeks[id].entries)), updatedAt: new Date().toISOString() });
+    return writeDoc("weeks/" + id, { week: id, self: JSON.parse(JSON.stringify(weeks[id].self || {})), att: JSON.parse(JSON.stringify(weeks[id].att || {})), updatedAt: new Date().toISOString() });
   });
 }
 function saveSettings() {
@@ -505,24 +525,29 @@ function saveSettings() {
     return writeDoc("config/settings", JSON.parse(JSON.stringify(settings)));
   });
 }
-function setHours(id, code, d, v) {
-  if (!weeks[id]) weeks[id] = { entries: {} };
-  const a = hrs(id, code).slice(); a[d] = Math.max(0, Math.min(24, Math.round(v * 60) / 60)); weeks[id].entries[code] = a;
+function put(id, kind, code, d, v) {
+  const w = weeks[id] = weeks[id] || { self: {}, att: {} };
+  w[kind] = w[kind] || {};
+  const a = (kind === "self" ? selfHrs : attHrs)(id, code).slice();
+  a[d] = Math.max(0, Math.min(24, Math.round(v * 60) / 60));
+  w[kind][code] = a;
 }
+function setSelf(id, code, d, v) { put(id, "self", code, d, v); }
+function setAtt(id, code, d, v) { put(id, "att", code, d, v); }
 
 /* ---------- week grid ---------- */
 const grid = document.getElementById("grid");
 function buildGrid(mon, rows) {
   const isCur = ymd(mondayOf(new Date())) === ymd(mon), ti = todayIdx();
   const dcls = i => (isCur && i === ti ? " is-today" : "");
-  let html = `<thead><tr><th>Course</th>${DAYS.map((d, i) => `<th class="r${dcls(i)}">${d} <span class="muted">${addDays(mon, i).getDate()}</span></th>`).join("")}<th class="r">Logged</th><th class="r">Classes</th><th class="r">Target</th><th>Status</th></tr></thead><tbody>`;
+  let html = `<thead><tr><th>Course</th>${DAYS.map((d, i) => `<th class="r${dcls(i)}">${d} <span class="muted">${addDays(mon, i).getDate()}</span></th>`).join("")}<th class="r">Self-study</th><th class="r">Classes</th><th class="r">Logged</th><th class="r">Target</th><th>Status</th></tr></thead><tbody>`;
   for (const c of rows) {
     const g = groupOf(c);
     html += `<tr data-code="${c.code}"><td class="course"><span class="nm">${esc(c.name)}</span><span class="cd">${c.code} · ${c.ects} ECTS${g ? " · group " + g : ""}</span><span class="term">${TERM_LABEL[c.term]}</span></td>`;
     for (let i = 0; i < 7; i++) html += `<td class="day${dcls(i)}"><input id="in-${c.code}-${i}" data-code="${c.code}" data-d="${i}" type="text" inputmode="text" autocomplete="off" placeholder="·" aria-label="${esc(c.name)}, ${DAYS[i]}" title="Hours and minutes, e.g. 1:55"><span class="cls" data-k="c${i}"></span></td>`;
-    html += `<td class="r num" data-k="tot"></td><td class="r num" data-k="cls"></td><td class="r num tgt" data-k="tgt"></td><td data-k="st"></td></tr>`;
+    html += `<td class="r num" data-k="slf"></td><td class="r num" data-k="cls"></td><td class="r num" data-k="tot"></td><td class="r num tgt" data-k="tgt"></td><td data-k="st"></td></tr>`;
   }
-  html += `</tbody><tfoot><tr><td>Total</td>${DAYS.map((_, i) => `<td class="r num${dcls(i)}" data-k="d${i}"></td>`).join("")}<td class="r num" data-k="tot"></td><td class="r num" data-k="cls"></td><td class="r num" data-k="tgt"></td><td></td></tr></tfoot>`;
+  html += `</tbody><tfoot><tr><td>Total</td>${DAYS.map((_, i) => `<td class="r num${dcls(i)}" data-k="d${i}"></td>`).join("")}<td class="r num" data-k="slf"></td><td class="r num" data-k="cls"></td><td class="r num" data-k="tot"></td><td class="r num" data-k="tgt"></td><td></td></tr></tfoot>`;
   grid.innerHTML = html;
 }
 function renderGrid() {
@@ -531,29 +556,34 @@ function renderGrid() {
   if (grid.dataset.key !== key) { buildGrid(mon, rows); grid.dataset.key = key; }
   const frac = elapsedFrac(mon), active = document.activeElement;
   const dayTot = [0, 0, 0, 0, 0, 0, 0];
-  let tot = 0, tgt = 0, clsTot = 0;
+  let tot = 0, tgt = 0, clsTot = 0, slfTot = 0, attTot = 0;
   for (const c of rows) {
     const tr = grid.querySelector(`tr[data-code="${c.code}"]`);
-    const a = hrs(id, c.code), wc = weekClass(c.code, mon), wct = weekClassTypes(c.code, mon);
-    a.forEach((v, i) => {
-      dayTot[i] += v;
+    const sf = selfHrs(id, c.code), at = attHrs(id, c.code), wc = weekClass(c.code, mon), wct = weekClassTypes(c.code, mon);
+    sf.forEach((v, i) => {
+      dayTot[i] += v + at[i];
       const inp = tr.querySelector(`input[data-d="${i}"]`);
       inp.disabled = readOnly;
       if (inp !== active) { const s = v ? hm(v) : ""; if (inp.value !== s) inp.value = s; }
-      tr.querySelector(`[data-k="c${i}"]`).innerHTML = classLabel(wct[i]);
+      const cls = tr.querySelector(`[data-k="c${i}"]`), done = wc[i] > 0 && at[i] > 0;
+      cls.innerHTML = classLabel(wct[i], done);
+      cls.classList.toggle("on", done);
+      if (wc[i] > 0) cls.dataset.d = i; else delete cls.dataset.d;
     });
-    const t = weeklyTarget(c, mon), s = sum(a), cl = sum(wc);
-    tot += s; tgt += t; clsTot += cl;
+    const t = weeklyTarget(c, mon), slf = sum(sf), att = sum(at), s = slf + att, cl = sum(wc);
+    tot += s; tgt += t; clsTot += cl; slfTot += slf; attTot += att;
+    tr.querySelector('[data-k="slf"]').textContent = hm(slf);
     tr.querySelector('[data-k="tot"]').textContent = hm(s);
-    tr.querySelector('[data-k="cls"]').textContent = cl ? hm(cl) : "—";
+    tr.querySelector('[data-k="cls"]').innerHTML = cl ? `${hm(att)}<small>of ${hm(cl)}</small>` : "—";
     tr.querySelector('[data-k="tgt"]').innerHTML = t > 0 ? `${hm(t)}<small>${cl ? "self-study " + hm(Math.max(0, t - cl)) : "all self-study"}</small>` : `<span class="muted">—</span>`;
     tr.querySelector('[data-k="st"]').innerHTML = t <= 0 ? (s > 0 ? pill({ cls: "idle", icon: "○", label: "Off-plan" }) : "")
       : frac === 0 ? pill({ cls: "idle", icon: "○", label: "Upcoming" }) : pill(status(s, t * frac));
   }
   const ft = grid.querySelector("tfoot");
   dayTot.forEach((v, i) => ft.querySelector(`[data-k="d${i}"]`).textContent = hm(v));
+  ft.querySelector('[data-k="slf"]').textContent = hm(slfTot);
   ft.querySelector('[data-k="tot"]').textContent = hm(tot);
-  ft.querySelector('[data-k="cls"]').textContent = hm(clsTot);
+  ft.querySelector('[data-k="cls"]').innerHTML = `${hm(attTot)}<small>of ${hm(clsTot)}</small>`;
   ft.querySelector('[data-k="tgt"]').textContent = hm(tgt);
   document.getElementById("fillBtn").disabled = readOnly || frac === 0 || clsTot === 0;
   return { tot, tgt, frac, clsTot };
@@ -561,20 +591,27 @@ function renderGrid() {
 grid.addEventListener("input", e => {
   const inp = e.target; if (!inp.matches("input[data-code]") || readOnly) return;
   const id = ymd(viewMon);
-  setHours(id, inp.dataset.code, +inp.dataset.d, parseHM(inp.value));
+  setSelf(id, inp.dataset.code, +inp.dataset.d, parseHM(inp.value));
   saveWeek(id); renderAll();
 });
 grid.addEventListener("change", e => { if (e.target.matches("input[data-code]")) renderGrid(); });
 grid.addEventListener("focusout", e => { if (e.target.matches("input[data-code]")) setTimeout(renderGrid, 0); });
+grid.addEventListener("click", e => {
+  const el = e.target.closest(".cls[data-d]"); if (!el || readOnly) return;
+  const code = el.closest("tr").dataset.code, i = +el.dataset.d, id = ymd(viewMon), wc = weekClass(code, viewMon);
+  if (!wc[i]) return;
+  setAtt(id, code, i, attHrs(id, code)[i] > 0 ? 0 : wc[i]);
+  saveWeek(id); renderAll();
+});
 document.getElementById("fillBtn").addEventListener("click", () => {
   if (readOnly) return;
   const mon = viewMon, id = ymd(mon), today = ymd(new Date());
   let n = 0;
   for (const c of rowsFor(mon)) {
-    const a = hrs(id, c.code), wc = weekClass(c.code, mon);
-    wc.forEach((h, i) => { if (h > 0 && !a[i] && ymd(addDays(mon, i)) <= today) { setHours(id, c.code, i, h); n++; } });
+    const at = attHrs(id, c.code), wc = weekClass(c.code, mon);
+    wc.forEach((h, i) => { if (h > 0 && !at[i] && ymd(addDays(mon, i)) <= today) { setAtt(id, c.code, i, h); n++; } });
   }
-  document.getElementById("fillMsg").textContent = n ? `Added class time to ${n} empty ${n === 1 ? "cell" : "cells"}.` : "Every class so far this week already has hours.";
+  document.getElementById("fillMsg").textContent = n ? `Marked ${n} ${n === 1 ? "class" : "classes"} attended.` : "Every class so far this week is already marked.";
   if (n) { saveWeek(id); renderAll(); }
 });
 
@@ -741,7 +778,7 @@ timerBtn.addEventListener("click", () => {
     const add = Math.round((Date.now() - timer.start) / 36e5 * 20) / 20;  // nearest 3 minutes
     const course = COURSES.find(c => c.code === timer.code);
     if (add > 0 && !readOnly) {
-      setHours(id, timer.code, d, hrs(id, timer.code)[d] + add);
+      setSelf(id, timer.code, d, selfHrs(id, timer.code)[d] + add);
       saveWeek(id);
       document.getElementById("timerNote").textContent = `Logged ${hm(add)} to ${course ? course.name : timer.code} on ${DAYS[d]}.`;
     } else {
@@ -766,7 +803,7 @@ document.getElementById("clearWeekBtn").addEventListener("click", () => { clearC
 document.getElementById("clearNo").addEventListener("click", () => { clearConfirm.hidden = true; });
 document.getElementById("clearYes").addEventListener("click", () => {
   clearConfirm.hidden = true; if (readOnly) return;
-  const id = ymd(viewMon); weeks[id] = { entries: {} }; saveWeek(id); renderAll();
+  const id = ymd(viewMon); weeks[id] = { self: {}, att: {} }; saveWeek(id); renderAll();
 });
 document.getElementById("exportBtn").addEventListener("click", async () => {
   const msg = document.getElementById("exportMsg");
@@ -822,7 +859,7 @@ let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTime
     db = d; backend = "db"; setChip("ok", "Synced");
     db.collection("weeks").onSnapshot(snap => {
       const next = {};
-      for (const doc of snap.docs) if (doc.exists) next[doc.id] = sanitizeWeek(doc.data());
+      for (const doc of snap.docs) if (doc.exists) next[doc.id] = sanitizeWeek(doc.data(), doc.id);
       for (const id in weeks) if (dirty.has("w:" + id)) next[id] = weeks[id];
       weeks = next; renderAll();
     }, () => { setChip("err", "Offline"); showNotice("Lost the connection to your saved hours. Reload the page to reconnect."); });
