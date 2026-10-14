@@ -100,6 +100,8 @@ section.block { display: flex; flex-direction: column; gap: 12px; }
 .block-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
 .block-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+/* Let a wide table spill past the page column into spare viewport width, centred; scroll only when the viewport itself is too narrow. */
+.scroll.wide { width: max-content; min-width: 100%; max-width: calc(100vw - 48px); position: relative; left: 50%; transform: translateX(-50%); }
 table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
 thead th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; white-space: nowrap; }
@@ -215,7 +217,7 @@ details.settings > summary { cursor: pointer; padding: 14px 16px; font-family: v
       </div>
     </div>
     <p class="muted">Type your self-study time per day as h:mm, for example 1:55; changes save automatically. Teal figures under a cell are that day's scheduled lectures and exercise sessions — click one to mark it attended (✓). Both count toward the course.</p>
-    <div class="scroll"><table id="grid"><tbody><tr><td class="loading">Loading timetable…</td></tr></tbody></table></div>
+    <div class="scroll wide"><table id="grid"><tbody><tr><td class="loading">Loading timetable…</td></tr></tbody></table></div>
   </section>
 
   <section class="block">
